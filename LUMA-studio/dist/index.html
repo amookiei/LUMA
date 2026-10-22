@@ -22,12 +22,13 @@
     <input id="file-input" type="file" multiple accept=".glb,.gltf,.obj,.stl,.mtl,.bin,.png,.jpg,.jpeg,.webp,.avif,.ktx2" hidden>
     <div class="model-card"><span class="model-symbol" data-icon="headphones"></span><div><strong id="model-name">Arc headphones</strong><span id="model-meta">샘플 모델 · 준비 중</span></div><span class="sample-badge" id="sample-badge">DEMO</span></div>
     <div class="model-actions"><button id="demo-button">샘플 불러오기</button><span id="model-stats">—</span></div>
+    <div class="saved-models" id="saved-models" hidden><div class="saved-models-heading"><span>저장된 모델</span><span id="model-save-status" class="model-save-status"></span></div><div id="model-list" class="model-list"><span class="model-empty">불러온 모델은 이 프로젝트에 자동으로 저장됩니다.</span></div></div>
    </section>
    <section class="panel-section preset-section"><div class="section-heading"><h2><span>02</span> 라이팅 프리셋</h2><span class="mini-label" id="preset-count">LOOKS</span></div><p class="section-description">당신의 제품에 어울리는 분위기.</p>
     <div class="presets" id="preset-grid"></div>
     <div class="saved-looks"><div class="saved-looks-heading"><span>내 조명 룩</span><button id="save-look" type="button"><span data-icon="plus"></span> 현재 룩 저장</button></div><div id="look-list" class="look-list"><span class="look-empty">조명·재질 설정을 이름 붙여 저장하면 여기서 다시 불러올 수 있습니다.</span></div></div>
    </section>
-   <div class="privacy-note"><span data-icon="shield"></span><p>모델 파일은 서버에 업로드되지 않고<br>이 기기에서만 처리됩니다. <span id="privacy-storage">렌더 결과만 작업 공간 DB에 저장됩니다.</span></p></div>
+   <div class="privacy-note"><span data-icon="shield"></span><p id="privacy-text">모델 파일은 서버에 업로드되지 않고<br>이 기기에서만 처리됩니다. <span id="privacy-storage">렌더 결과만 작업 공간 DB에 저장됩니다.</span></p></div>
   </aside>
   <section class="center-panel">
    <div class="canvas-heading"><div><span class="eyebrow">YOUR VIRTUAL PHOTO STUDIO</span><h1>빛으로, 디테일을.</h1></div><button id="reset-view" class="outline-button"><span data-icon="reset"></span> 뷰 초기화</button></div>
