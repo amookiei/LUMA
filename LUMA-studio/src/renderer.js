@@ -8,12 +8,11 @@ import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUniformsLib.js';
 import { createDemoHeadphones } from './demo.js';
+import { LIGHTING_PRESETS, DEFAULT_PRESET } from './presets.js';
+import { VIEW_BY_ID } from './views.js';
 
-const PRESETS = {
-  dark: { background: '#151619', floor: '#070809', ambient: .08, environment: .50, key: 4.2, rim: 16, fill: .85, color: 0xe9f0ff, rimColor: 0xffffff },
-  light: { background: '#e7e7eb', floor: '#e7e7eb', ambient: .42, environment: 1.08, key: 8, rim: 7, fill: 5, color: 0xffffff, rimColor: 0xf0f4ff },
-  amber: { background: '#170c07', floor: '#170c07', ambient: .10, environment: .40, key: 4, rim: 22, fill: 1.2, color: 0xffede0, rimColor: 0xff6b12 },
-};
+const PRESETS = LIGHTING_PRESETS;
+export const SETTING_RANGES = { exposure: [.1, 4], lightStrength: [.05, 5], lightAngle: [-360, 360], roughness: [.02, 1], metalness: [0, 1], focalLength: [15, 200], fStop: [1, 22] };
 const delay = () => new Promise(resolve => setTimeout(resolve, 0));
 const clamp = THREE.MathUtils.clamp;
 const abort = signal => { if (signal?.aborted) throw new DOMException('렌더링을 취소했습니다.', 'AbortError'); };
@@ -47,19 +46,15 @@ function disposeObject(object) {
 }
 
 // An entirely local HDR softbox environment, shared by preview and path tracing.
+// Built from the preset's softbox list so new looks need no shader or asset work.
 function makeEnvironment(preset) {
   const width = 512, height = 256;
   const data = new Float32Array(width * height * 4);
-  const boxes = [
-    { u: .18, v: .69, w: .075, h: .13, power: preset === 'light' ? 10 : 7, rgb: [1, 1, 1] },
-    { u: .68, v: .64, w: .035, h: .19, power: preset === 'light' ? 8 : 19, rgb: preset === 'amber' ? [1, .24, .025] : [1, 1, 1] },
-    { u: .40, v: .84, w: .15, h: .045, power: 6, rgb: [1, 1, 1] },
-    { u: .93, v: .59, w: .045, h: .17, power: preset === 'light' ? 5 : 1.5, rgb: [.86, .92, 1] },
-  ];
+  const boxes = preset.softboxes;
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       const u = x / width, v = y / height;
-      const ambient = preset === 'light' ? .30 : .025;
+      const ambient = preset.envAmbient;
       let r = ambient, g = ambient, b = ambient;
       for (const box of boxes) {
         const dx = Math.min(Math.abs(u - box.u), 1 - Math.abs(u - box.u));
@@ -84,9 +79,9 @@ export class StudioRenderer {
     this.container = container;
     this.onStatus = onStatus;
     this.onChange = onChange;
-    this.preset = 'dark';
+    this.preset = DEFAULT_PRESET;
     this.view = 'hero';
-    this.settings = { exposure: 1, lightStrength: 1, lightAngle: 0, roughness: .5, metalness: .5, materialMode: 'original', color: '#55565a', focalLength: 70, background: '#151619', transparent: false };
+    this.settings = { exposure: 1, lightStrength: 1, lightAngle: 0, roughness: .5, metalness: .5, materialMode: 'original', color: '#55565a', focalLength: 70, background: PRESETS[DEFAULT_PRESET].background, transparent: false, dof: false, fStop: 2.8 };
     this.info = { name: 'FORM / H-01', format: 'DEMO', meshes: 0, triangles: 0, dimensions: [0, 0, 0], isDemo: true };
     this.environments = new Map();
     this._capturing = false;
@@ -157,7 +152,7 @@ export class StudioRenderer {
     this.lightRig.add(this.shadowLight, this.shadowLight.target);
     this.ambient = new THREE.HemisphereLight(0xffffff, 0x111217, .12);
     this.scene.add(this.ambient);
-    this.setPreset('dark');
+    this.setPreset(DEFAULT_PRESET);
     this.resize();
     this.loadDemo();
     this.observer = new ResizeObserver(() => this.resize());
@@ -362,7 +357,7 @@ export class StudioRenderer {
     if (!PRESETS[preset]) return;
     this.preset = preset;
     this.settings.background = PRESETS[preset].background;
-    if (!this.environments.has(preset)) this.environments.set(preset, makeEnvironment(preset));
+    if (!this.environments.has(preset)) this.environments.set(preset, makeEnvironment(PRESETS[preset]));
     this.scene.environment = this.environments.get(preset);
     this._applyLighting();
   }
@@ -376,7 +371,7 @@ export class StudioRenderer {
     this.key.intensity = preset.key * strength; this.key.color.setHex(preset.color);
     this.rim.intensity = preset.rim * strength; this.rim.color.setHex(preset.rimColor);
     this.fill.intensity = preset.fill * strength;
-    this.shadowLight.intensity = (this.preset === 'light' ? 1.0 : .45) * strength;
+    this.shadowLight.intensity = preset.shadow * strength;
     this.ambient.intensity = preset.ambient * strength;
     this.floor.visible = !this.settings.transparent;
     this.floor.material.color.set(this.settings.background && this.settings.background !== preset.background ? this.settings.background : preset.floor);
@@ -386,9 +381,11 @@ export class StudioRenderer {
   setSettings(settings) {
     const oldFocalLength = this.settings.focalLength;
     const safe = { ...settings };
-    for (const [key, range] of Object.entries({ exposure: [.1, 4], lightStrength: [.05, 5], lightAngle: [-360, 360], roughness: [.02, 1], metalness: [0, 1], focalLength: [15, 200] })) {
+    for (const [key, range] of Object.entries(SETTING_RANGES)) {
       if (key in safe) safe[key] = Number.isFinite(Number(safe[key])) ? clamp(Number(safe[key]), ...range) : this.settings[key];
     }
+    if ('dof' in safe) safe.dof = !!safe.dof;
+    if ('transparent' in safe) safe.transparent = !!safe.transparent;
     if (safe.background && !/^#[\da-f]{6}$/i.test(safe.background)) delete safe.background;
     if (safe.color && !/^#[\da-f]{6}$/i.test(safe.color)) delete safe.color;
     Object.assign(this.settings, safe);
@@ -417,15 +414,15 @@ export class StudioRenderer {
 
   setView(view) {
     if (!this.model) return;
-    const directions = { hero: [5, 3.3, 7], front: [0, 3.5, 10], side: [10, 3.5, 0], back: [0, 3.5, -10], top: [0, 10, .001], detail: [6, 3.5, 8] };
-    const direction = new THREE.Vector3(...(directions[view] || directions.hero)).normalize();
+    const definition = VIEW_BY_ID[view] || VIEW_BY_ID.hero;
+    const direction = new THREE.Vector3(...definition.direction).normalize();
     const halfFov = THREE.MathUtils.degToRad(this.camera.fov / 2);
     const limitingFov = Math.min(halfFov, Math.atan(Math.tan(halfFov) * this.camera.aspect));
     let distance = this.radius / Math.sin(limitingFov) * 1.03;
     const target = this.center.clone();
-    if (view === 'detail') { distance *= .56; target.y += .25; }
-    this.camera.up.set(0, 1, 0);
-    if (view === 'top') this.camera.up.set(0, 0, -1);
+    if (definition.zoom) distance *= definition.zoom;
+    if (definition.lift) target.y += definition.lift;
+    this.camera.up.set(...(definition.up || [0, 1, 0]));
     this.controls.target.copy(target);
     this.camera.position.copy(target).addScaledVector(direction, distance);
     this.camera.lookAt(target);
@@ -436,6 +433,33 @@ export class StudioRenderer {
   }
 
   resetView() { this.setView('hero'); }
+
+  // Serialisable camera pose, used for saved cuts and turntable frames.
+  getCameraState() {
+    return { position: this.camera.position.toArray(), target: this.controls.target.toArray(), up: this.camera.up.toArray(), focalLength: this.camera.getFocalLength() };
+  }
+
+  // Restores a pose from getCameraState(). Focal length is applied without the dolly
+  // compensation of setSettings so the saved framing comes back exactly.
+  applyCameraState(state) {
+    if (!state?.position || !state?.target) return;
+    this.camera.up.fromArray(state.up || [0, 1, 0]);
+    this.controls.target.fromArray(state.target);
+    this.camera.position.fromArray(state.position);
+    if (Number.isFinite(state.focalLength)) { this.camera.setFocalLength(state.focalLength); this.settings.focalLength = this.camera.getFocalLength(); }
+    this.camera.lookAt(this.controls.target);
+    this.camera.updateProjectionMatrix();
+    this.controls.update();
+    this.view = 'custom';
+  }
+
+  // Camera pose rotated around the vertical axis through the target. 0..1 maps to one full turn.
+  orbitedCameraState(state, turn) {
+    const target = new THREE.Vector3().fromArray(state.target);
+    const offset = new THREE.Vector3().fromArray(state.position).sub(target);
+    offset.applyAxisAngle(new THREE.Vector3(0, 1, 0), turn * Math.PI * 2);
+    return { ...state, position: target.clone().add(offset).toArray() };
+  }
 
   rotateModel(axis = 'y') {
     if (!this.model || !['x', 'y', 'z'].includes(axis) || this._capturing) return;
@@ -452,7 +476,7 @@ export class StudioRenderer {
     this.camera.updateProjectionMatrix();
   }
 
-  async capture({ width = 1600, height = 1600, quality = 'standard', view, preset, signal, onProgress = () => {} } = {}) {
+  async capture({ width = 1600, height = 1600, quality = 'standard', view, camera, preset, signal, onProgress = () => {} } = {}) {
     if (this._capturing || this._loading) throw new Error('다른 렌더링 작업이 진행 중입니다.');
     if (!this.model) throw new Error('먼저 3D 모델을 불러와 주세요.');
     if (this._contextLost) throw new Error('GPU 연결이 끊겼습니다. 페이지를 새로고침해 주세요.');
@@ -466,7 +490,8 @@ export class StudioRenderer {
       this.renderer.setPixelRatio(1); this.renderer.setSize(width, height, false);
       this.camera.aspect = width / height; this.camera.updateProjectionMatrix();
       if (preset) this.setPreset(preset);
-      if (view) this.setView(view);
+      if (camera) this.applyCameraState(camera);
+      else if (view) this.setView(view);
       this.scene.updateMatrixWorld(true); this.camera.updateMatrixWorld(true);
       onProgress(.02);
       let engine = 'preview';
@@ -478,17 +503,28 @@ export class StudioRenderer {
           if (this.info.triangles > 1500000) throw new Error('150만 개가 넘는 삼각형은 미리보기 엔진으로 출력합니다');
           if (this.info.hasInstancing) throw new Error('인스턴스가 포함된 모델은 실시간 PBR 엔진으로 출력합니다');
           if (!this.pathTracer) {
-            const { WebGLPathTracer } = await import('three-gpu-pathtracer');
+            const { WebGLPathTracer, PhysicalCamera } = await import('three-gpu-pathtracer');
             abort(signal);
             this.pathTracer = new WebGLPathTracer(this.renderer);
+            this.PhysicalCamera = PhysicalCamera;
           }
           const tracer = this.pathTracer;
+          // Depth of field is a path-tracing feature: a physical camera with a real aperture
+          // focused on the orbit target. The preview keeps using the pinhole camera.
+          let renderCamera = this.camera;
+          if (this.settings.dof) {
+            renderCamera = new this.PhysicalCamera().copy(this.camera);
+            renderCamera.fStop = this.settings.fStop;
+            renderCamera.focusDistance = this.camera.position.distanceTo(this.controls.target);
+            renderCamera.apertureBlades = 6;
+            renderCamera.updateMatrixWorld(true);
+          }
           tracer.tiles.set(width > 1600 || height > 1600 ? 4 : 2, width > 1600 || height > 1600 ? 4 : 2);
           tracer.renderDelay = 0; tracer.fadeDuration = 0; tracer.minSamples = 1;
           tracer.bounces = quality === 'high' ? 8 : 5;
           tracer.filterGlossyFactor = .5;
           tracer.textureSize.set(1024, 1024);
-          tracer.setScene(this.scene, this.camera);
+          tracer.setScene(this.scene, renderCamera);
           abort(signal);
           const targetSamples = quality === 'high' ? 256 : 64;
           let lastProgressAt = performance.now(), lastSamples = -1;
@@ -515,13 +551,14 @@ export class StudioRenderer {
       abort(signal);
       const blob = await new Promise((resolve, reject) => this.renderer.domElement.toBlob(value => value ? resolve(value) : reject(new Error('PNG 이미지 생성에 실패했습니다. 출력 크기를 줄여 주세요.')), 'image/png'));
       abort(signal);
-      this.lastCaptureInfo = { engine, quality, width, height, samples: engine === 'pathtracing' ? this.pathTracer.samples : 0 };
+      this.lastCaptureInfo = { engine, quality, width, height, samples: engine === 'pathtracing' ? this.pathTracer.samples : 0, dof: engine === 'pathtracing' && this.settings.dof };
       onProgress(1);
       return blob;
     } finally {
       this.setPreset(state.preset); Object.assign(this.settings, state.settings); this._applyLighting();
       this.camera.position.copy(state.position); this.camera.quaternion.copy(state.quaternion); this.camera.up.copy(state.up);
-      this.controls.target.copy(state.target); this.camera.aspect = state.aspect; this.camera.updateProjectionMatrix();
+      this.controls.target.copy(state.target); this.camera.aspect = state.aspect;
+      this.camera.setFocalLength(state.settings.focalLength); this.camera.updateProjectionMatrix();
       this.renderer.setPixelRatio(state.ratio); this.renderer.setSize(state.size.x, state.size.y, false);
       this.renderer.setRenderTarget(null);
       this.controls.enabled = state.controls; this.view = state.view;
