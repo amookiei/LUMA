@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "build": "node build.mjs",
-    "start": "node server.mjs",
-    "dev": "node build.mjs && node server.mjs",
+    "start": "node server/cli.mjs",
+    "dev": "node build.mjs && node server/cli.mjs",
     "test": "node --test test/*.test.mjs"
   },
   "dependencies": {

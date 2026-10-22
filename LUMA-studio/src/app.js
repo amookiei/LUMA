@@ -497,7 +497,11 @@ async function selectProject(id) {
 }
 async function bootPersistence() {
   state.online = await api.probe();
-  if (!state.online) { updateProjectBar(); return; }
+  if (!state.online) {
+    updateProjectBar();
+    if (api.storageError) toast(`서버 저장소를 사용할 수 없어 결과를 이 탭에만 보관합니다. ${api.storageError}`, true);
+    return;
+  }
   try {
     state.projects = await api.listProjects();
     let last = null;

@@ -13,16 +13,25 @@ import { fileURLToPath } from 'node:url';
 import { openDatabase } from './db.mjs';
 import { Store } from './store.mjs';
 import { createRouter } from './routes.mjs';
-import { HttpError, sendError } from './http.mjs';
+import { HttpError, sendError, sendJSON } from './http.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml', '.wasm': 'application/wasm', '.json': 'application/json', '.txt': 'text/plain; charset=utf-8', '.ico': 'image/x-icon' };
 
 export function createApp({ dataDir = path.resolve(ROOT, process.env.LUMA_DATA_DIR || 'data'), dbPath = process.env.LUMA_DB_PATH || path.join(dataDir, 'luma.sqlite'),
   distDir = path.resolve(ROOT, 'dist'), maxUploadBytes = Number(process.env.LUMA_MAX_UPLOAD_MB || 96) * 1024 * 1024 } = {}) {
-  const db = openDatabase(dbPath);
-  const store = new Store(db, { dataDir });
-  const router = createRouter(store, { maxUploadBytes });
+  // If the database cannot be opened (read-only file system such as a serverless
+  // platform, or a Node build without node:sqlite) the studio still serves the app;
+  // /api/health reports why and the client falls back to in-tab storage.
+  let db = null, store = null, router = null, storageError = null;
+  try {
+    db = openDatabase(dbPath);
+    store = new Store(db, { dataDir });
+    router = createRouter(store, { maxUploadBytes });
+  } catch (error) {
+    storageError = error instanceof Error ? error.message : String(error);
+    console.error(`[LUMA] 저장소를 열 수 없어 API 없이 정적 모드로 실행합니다: ${storageError}`);
+  }
 
   async function serveStatic(req, res, pathname) {
     const file = path.resolve(distDir, '.' + (pathname === '/' ? '/index.html' : pathname));
@@ -46,6 +55,10 @@ export function createApp({ dataDir = path.resolve(ROOT, process.env.LUMA_DATA_D
       return serveStatic(req, res, pathname);
     }
     try {
+      if (!router) {
+        if (pathname === '/api/health') return sendJSON(res, 200, { ok: false, api: 1, storage: 'unavailable', reason: storageError });
+        throw new HttpError(503, `서버 저장소를 사용할 수 없습니다: ${storageError}`);
+      }
       const match = router.match(req.method, pathname);
       if (!match) throw new HttpError(404, 'API 경로를 찾을 수 없습니다.');
       if (match.methodNotAllowed) throw new HttpError(405, '허용되지 않은 메서드입니다.');
@@ -57,13 +70,13 @@ export function createApp({ dataDir = path.resolve(ROOT, process.env.LUMA_DATA_D
   });
 
   return {
-    server, store, db,
+    server, store, db, storageError,
     listen(port = Number(process.env.PORT || 4173), host = process.env.HOST || '127.0.0.1') {
       return new Promise(resolve => server.listen(port, host, () => resolve(server.address())));
     },
     async close() {
       await new Promise(resolve => server.close(resolve));
-      db.close();
+      db?.close();
     },
   };
 }

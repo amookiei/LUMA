@@ -7,13 +7,26 @@ LUMA — Product Render Studio
 Node.js 22.13 이상에서 이 폴더를 열고 다음 순서로 실행하세요.
   npm install
   npm run build        # src → dist 번들
-  npm start            # dist 정적 파일 + /api 서버 (SQLite 자동 생성)
+  npm start            # dist 정적 파일 + /api 서버 (SQLite 자동 생성, server/cli.mjs)
 브라우저: http://127.0.0.1:4173
 개발 중에는 npm run dev 로 빌드와 서버 실행을 한 번에 할 수 있습니다.
 테스트: npm test (API·DB 통합 테스트, node:test)
 
 dist 폴더만 일반 정적 호스팅에 올려도 동작합니다. 이 경우 /api 가 없으므로
 갤러리·조명 룩·저장 구도는 브라우저 탭 메모리에만 보관됩니다(헤더에 표시).
+서버가 떠 있어도 저장소를 열 수 없으면(읽기 전용 파일 시스템 등) 같은 방식으로
+정적 모드로 동작하며 /api/health 가 {ok:false, reason} 으로 이유를 알려 줍니다.
+
+Vercel 배포
+- vercel.json 이 dist 를 정적으로 배포하도록 고정합니다(Root Directory: LUMA-studio).
+  Vercel 함수는 SQLite 파일을 보관할 수 없으므로 DB 모드는 Vercel에서 켜지지 않고,
+  앱은 자동으로 탭 메모리 모드로 동작합니다.
+- 프로젝트 루트에 server.mjs 같은 파일을 두지 마세요. Vercel이 이를 서버리스 함수로
+  감지해 실행하다 실패하면 사이트 전체가 500(FUNCTION_INVOCATION_FAILED)이 됩니다.
+  서버 진입점은 server/cli.mjs 입니다.
+- DB 모드가 필요하면 Node를 상시 실행할 수 있는 호스트(Railway, Fly.io, Render, 자체 VM)에
+  npm start 로 배포하거나, 외부 DB(Turso/libSQL, Neon Postgres)와 Blob 저장소로
+  server/store.mjs 를 옮기는 작업이 필요합니다.
 
 데이터베이스
 - 별도 설치 없이 Node 내장 SQLite(node:sqlite)를 사용합니다.

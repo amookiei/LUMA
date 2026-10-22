@@ -133,3 +133,26 @@ test('migrations are idempotent', async () => {
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM schema_migrations').get().n, 1);
   db.close();
 });
+
+test('an unusable storage location degrades to static mode instead of crashing', async () => {
+  const { mkdtemp, writeFile, mkdir } = await import('node:fs/promises');
+  const dir = await mkdtemp(path.join(tmpdir(), 'luma-ro-'));
+  await mkdir(path.join(dir, 'dist'));
+  await writeFile(path.join(dir, 'dist', 'index.html'), '<!doctype html><title>x</title>');
+  await writeFile(path.join(dir, 'blocker'), '');
+  // A database path "inside" a regular file cannot be created.
+  const app = createApp({ dataDir: path.join(dir, 'blocker', 'data'), dbPath: path.join(dir, 'blocker', 'data', 'luma.sqlite'), distDir: path.join(dir, 'dist') });
+  assert.ok(app.storageError);
+  const address = await app.listen(0, '127.0.0.1');
+  const base = `http://127.0.0.1:${address.port}`;
+  try {
+    const health = await (await fetch(`${base}/api/health`)).json();
+    assert.equal(health.ok, false);
+    assert.equal(health.storage, 'unavailable');
+    assert.ok(health.reason);
+    const projects = await fetch(`${base}/api/projects`);
+    assert.equal(projects.status, 503);
+    const page = await fetch(`${base}/`);
+    assert.equal(page.status, 200);
+  } finally { await app.close(); await rm(dir, { recursive: true, force: true }); }
+});

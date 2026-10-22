@@ -7,10 +7,12 @@ export class StudioAPI {
   }
 
   async probe() {
+    this.storageError = null;
     try {
       const response = await fetch(`${this.base}/health`, { cache: 'no-store' });
       const data = response.ok ? await response.json() : null;
       this.available = !!data?.ok;
+      if (data && !data.ok && data.reason) this.storageError = data.reason;
     } catch { this.available = false; }
     return this.available;
   }
