@@ -1,5 +1,6 @@
 import { StudioRenderer } from './renderer.js';
 import { StudioAPI } from './api.js';
+import { SupabaseStudioAPI } from './supabase-api.js';
 import { LIGHTING_PRESETS, PRESET_IDS, DEFAULT_PRESET, presetBackground } from './presets.js';
 import { BUILTIN_VIEWS } from './views.js';
 import { EFFECTS, EFFECT_DEFAULTS, applyEffects } from './effects.js';
@@ -54,8 +55,11 @@ const state = {
   results: [],
   modelName: 'FORM / H-01',
   online: false, project: null, projects: [], looks: [], savedViews: [],
+  models: [], currentModelId: null, modelSaving: false,
 };
-const api = new StudioAPI();
+// Supabase when the build was configured with LUMA_SUPABASE_URL/ANON_KEY, else the local SQLite server.
+const api = SupabaseStudioAPI.isConfigured() ? new SupabaseStudioAPI() : new StudioAPI();
+const supportsModels = () => state.online && !!api.supportsModels;
 const thumbURLs = new Map();
 let abortController, toastTimeout, thumbnailTimer, thumbAbort, engine;
 
@@ -117,6 +121,7 @@ function updateModel(info) {
   $('#sample-badge').hidden = !info.isDemo;
   $('#stage-model').textContent = info.isDemo ? 'FORM / H–01' : info.format.toUpperCase() + ' / 01';
   if (!info.isDemo) rememberModel(info.name);
+  if (info.isDemo) setCurrentModel(null);
   updateProjectBar();
 }
 async function rememberModel(name) {
@@ -421,7 +426,7 @@ async function refreshThumbnails() {
 // ---------------------------------------------------------------------------
 // Model loading
 // ---------------------------------------------------------------------------
-async function loadFiles(files) {
+async function loadFiles(files, { savedModel = null } = {}) {
   if (interactionLocked()) { toast('현재 작업이 끝난 뒤 파일을 불러와 주세요.'); return; }
   if (!files?.length) return;
   clearTimeout(thumbnailTimer);
@@ -429,12 +434,84 @@ async function loadFiles(files) {
   $('#stage-loading').hidden = false;
   $('#stage-loading strong').textContent = '모델을 스튜디오에 배치하고 있어요';
   $('#stage-loading>span').textContent = '재질과 텍스처를 불러옵니다.';
+  const list = Array.from(files);
+  let loaded = false;
   try {
-    await engine.loadFiles(files);
+    await engine.loadFiles(list);
+    loaded = true;
     state.view = 'hero'; $('#view-name').textContent = 'Hero angle';
-    toast('모델을 불러왔습니다. 조명과 각도를 선택해 보세요.');
+    toast(savedModel ? `‘${savedModel.name}’ 모델을 불러왔습니다.` : '모델을 불러왔습니다. 조명과 각도를 선택해 보세요.');
   } catch (e) { toast(e.message, true); }
-  finally { state.busy = false; $('#stage-loading').hidden = true; $('#file-input').value = ''; updateExport(); await refreshThumbnails(); }
+  finally { state.busy = false; $('#stage-loading').hidden = true; $('#file-input').value = ''; updateExport(); }
+  if (loaded) {
+    if (savedModel) setCurrentModel(savedModel.id);
+    else if (supportsModels() && state.project) persistModel(list, state.project.id);   // runs alongside thumbnails
+  }
+  await refreshThumbnails();
+}
+
+// ---------------------------------------------------------------------------
+// Saved 3D models (Supabase only). Loaded models are stored in the project so the
+// same product can be reopened later; identical files are not uploaded twice.
+// ---------------------------------------------------------------------------
+function setCurrentModel(id) { state.currentModelId = id; renderModels(); }
+function modelStatus(text, kind = '') { const el = $('#model-save-status'); el.textContent = text; el.className = 'model-save-status' + (kind ? ' ' + kind : ''); }
+async function persistModel(files, projectId) {
+  const mainFile = files.find(file => /\.(glb|gltf|obj|stl)$/i.test(file.name));
+  if (!mainFile) return;
+  state.modelSaving = true;
+  modelStatus('모델 저장 중…', 'busy');
+  try {
+    const { model, duplicate } = await api.saveModel({ projectId, files, mainFile, info: engine.info, onProgress: p => {
+      if (p.stage === 'hash') modelStatus(`파일 확인 ${p.done}/${p.total}`, 'busy');
+      else if (p.stage === 'upload') modelStatus(`업로드 ${p.done + 1}/${p.total} · ${p.file}`, 'busy');
+      else modelStatus('등록 중…', 'busy');
+    } });
+    if (!state.models.some(m => m.id === model.id)) state.models.unshift(model);
+    if (state.project?.id === projectId) setCurrentModel(model.id);
+    modelStatus(duplicate ? '이미 저장된 모델입니다' : '프로젝트에 저장됨');
+    if (!duplicate) toast(`‘${model.name}’ 모델을 프로젝트에 저장했습니다.`);
+  } catch (e) {
+    modelStatus('저장 실패', 'error');
+    toast(`모델을 저장하지 못했습니다. ${e.message}`, true);
+  } finally { state.modelSaving = false; renderModels(); }
+}
+async function openSavedModel(model) {
+  if (interactionLocked()) { toast('현재 작업이 끝난 뒤 불러와 주세요.'); return; }
+  modelStatus(`‘${model.name}’ 내려받는 중…`, 'busy');
+  try {
+    const { files } = await api.loadModelFiles(model.id, p => modelStatus(`내려받기 ${Math.min(p.done + 1, p.total)}/${p.total}`, 'busy'));
+    modelStatus('');
+    await loadFiles(files, { savedModel: model });
+  } catch (e) { modelStatus('불러오기 실패', 'error'); toast(`모델을 불러오지 못했습니다. ${e.message}`, true); }
+}
+async function deleteSavedModel(model) {
+  if (state.busy || state.modelSaving) return;
+  if (!confirm(`‘${model.name}’ 모델 파일을 프로젝트에서 삭제할까요? 이 모델로 만든 렌더링은 남습니다.`)) return;
+  try {
+    await api.deleteModel(model.id);
+    state.models = state.models.filter(m => m.id !== model.id);
+    if (state.currentModelId === model.id) state.currentModelId = null;
+    renderModels();
+  } catch (e) { toast(`모델을 삭제하지 못했습니다. ${e.message}`, true); }
+}
+function renderModels() {
+  const section = $('#saved-models');
+  section.hidden = !supportsModels();
+  if (section.hidden) return;
+  const list = $('#model-list');
+  if (!state.models.length) { list.innerHTML = '<span class="model-empty">불러온 모델은 이 프로젝트에 자동으로 저장됩니다.</span>'; return; }
+  list.replaceChildren(...state.models.map(model => {
+    const chip = document.createElement('div'); chip.className = 'model-chip' + (model.id === state.currentModelId ? ' current' : '');
+    const open = document.createElement('button'); open.type = 'button'; open.className = 'model-open'; open.title = `${model.name} 불러오기`;
+    const size = model.totalBytes >= 1048576 ? `${(model.totalBytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(model.totalBytes / 1024))} KB`;
+    open.innerHTML = `${icon('box')}<span><strong>${model.name}</strong><small>${model.format.toUpperCase()} · ${size}${model.triangleCount ? ' · ' + (model.triangleCount >= 1000 ? (model.triangleCount / 1000).toFixed(1) + 'K' : model.triangleCount) + ' tri' : ''}</small></span>`;
+    open.addEventListener('click', () => openSavedModel(model));
+    const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'model-remove'; remove.setAttribute('aria-label', `${model.name} 삭제`); remove.innerHTML = icon('close');
+    remove.addEventListener('click', () => deleteSavedModel(model));
+    chip.append(open, remove);
+    return chip;
+  }));
 }
 $('#upload-zone').addEventListener('click', () => { if (!state.busy && !state.thumbnailBusy) $('#file-input').click(); });
 $('#file-input').addEventListener('change', e => loadFiles(e.target.files));
@@ -467,15 +544,19 @@ function updateProjectBar() {
   $('#project-delete').disabled = state.projects.length <= 1;
   const indicator = $('#storage-indicator');
   indicator.dataset.mode = state.online ? 'db' : 'memory';
-  indicator.querySelector('em').textContent = state.online ? '작업 공간 DB 연결됨' : '로컬 렌더링 · 탭 메모리';
-  indicator.title = state.online ? '렌더 결과, 조명 룩, 저장한 구도가 서버 데이터베이스에 보관됩니다.' : '서버 없이 실행 중입니다. 결과는 이 탭에만 보관됩니다.';
-  $('#privacy-storage').textContent = state.online ? '렌더 결과만 작업 공간 DB에 저장됩니다.' : '결과 이미지는 이 탭에만 보관됩니다.';
-  $('#gallery-note').textContent = state.online ? `‘${project?.name || ''}’ 프로젝트의 갤러리입니다. 이미지는 스튜디오 서버의 데이터베이스에 보관되며 언제든 다시 내려받을 수 있습니다.` : '이 갤러리는 현재 브라우저 탭에 보관됩니다. 탭을 닫기 전에 이미지를 다운로드하세요.';
+  const cloud = supportsModels();
+  indicator.querySelector('em').textContent = cloud ? 'Supabase 연결됨' : state.online ? '작업 공간 DB 연결됨' : '로컬 렌더링 · 탭 메모리';
+  indicator.title = cloud ? '모델, 렌더 결과, 조명 룩, 저장한 구도가 내 계정의 비공개 Supabase 저장소에 보관됩니다.' : state.online ? '렌더 결과, 조명 룩, 저장한 구도가 서버 데이터베이스에 보관됩니다.' : '서버 없이 실행 중입니다. 결과는 이 탭에만 보관됩니다.';
+  $('#privacy-text').innerHTML = cloud
+    ? '렌더링은 이 기기의 GPU에서 처리되고,<br>모델과 결과는 <strong>내 계정의 비공개 저장소</strong>에만 보관됩니다.'
+    : `모델 파일은 서버에 업로드되지 않고<br>이 기기에서만 처리됩니다. <span id="privacy-storage">${state.online ? '렌더 결과만 작업 공간 DB에 저장됩니다.' : '결과 이미지는 이 탭에만 보관됩니다.'}</span>`;
+  renderModels();
+  $('#gallery-note').textContent = state.online ? `‘${project?.name || ''}’ 프로젝트의 갤러리입니다. 이미지는 ${cloud ? '내 계정의 비공개 Supabase 저장소' : '스튜디오 서버의 데이터베이스'}에 보관되며 언제든 다시 내려받을 수 있습니다.` : '이 갤러리는 현재 브라우저 탭에 보관됩니다. 탭을 닫기 전에 이미지를 다운로드하세요.';
   $('#gallery-subtitle').textContent = state.online && project ? `${project.name} · 생성한 이미지를 확인하고 원본 해상도로 다운로드하세요.` : '생성한 이미지를 확인하고 원본 해상도로 다운로드하세요.';
-  $('#export-footnote').textContent = state.online ? '완성된 이미지는 프로젝트 갤러리(DB)에 저장됩니다.' : '완성된 이미지는 갤러리에서 저장하세요.';
+  $('#export-footnote').textContent = cloud ? '완성된 이미지는 Supabase 프로젝트 갤러리에 저장됩니다.' : state.online ? '완성된 이미지는 프로젝트 갤러리(DB)에 저장됩니다.' : '완성된 이미지는 갤러리에서 저장하세요.';
 }
 function resultFromRecord(record) {
-  return { id: record.id, blob: null, url: api.renderImageURL(record.id), viewId: record.viewId, label: record.label, preset: record.preset, presetLabel: record.presetLabel, width: record.width, height: record.height, engine: record.engine, engineLabel: record.engineLabel, filename: record.filename, createdAt: record.createdAt };
+  return { id: record.id, blob: null, url: record.imageUrl || api.renderImageURL(record.id), viewId: record.viewId, label: record.label, preset: record.preset, presetLabel: record.presetLabel, width: record.width, height: record.height, engine: record.engine, engineLabel: record.engineLabel, filename: record.filename, createdAt: record.createdAt };
 }
 async function selectProject(id) {
   const project = state.projects.find(p => p.id === id);
@@ -485,10 +566,12 @@ async function selectProject(id) {
   state.results.forEach(r => { if (r.blob) URL.revokeObjectURL(r.url); });
   state.results = [];
   state.savedViews = [];
+  state.models = []; state.currentModelId = null;
   try {
-    const [renders, views] = await Promise.all([api.listRenders(id), api.listViews(id)]);
+    const [renders, views, models] = await Promise.all([api.listRenders(id), api.listViews(id), api.supportsModels ? api.listModels(id) : []]);
     state.results = renders.map(resultFromRecord);
     state.savedViews = views;
+    state.models = models;
   } catch (e) { toast(`프로젝트를 불러오지 못했습니다. ${e.message}`, true); }
   state.selected = new Set(allViews().map(v => v.id));
   if (state.view.startsWith('saved:')) { state.view = 'hero'; $('#view-name').textContent = 'Hero angle'; }
@@ -656,7 +739,7 @@ $('#render-button').addEventListener('click', async () => {
       let blob = await engine.capture({ width, height, quality, ...captureTarget(view), signal: abortController.signal, onProgress: progressReporter(i, selected.length) });
       blob = await applyEffects(blob, state.effects);
       const info = engine.lastCaptureInfo;
-      const meta = { viewId: view.id, label: view.label, preset: state.preset, presetLabel: LIGHTING_PRESETS[state.preset].ko, width, height, engine: info.engine, engineLabel: engineLabelFor(info), quality, samples: Math.round(info.samples || 0), modelName: state.modelName,
+      const meta = { viewId: view.id, label: view.label, preset: state.preset, presetLabel: LIGHTING_PRESETS[state.preset].ko, width, height, engine: info.engine, engineLabel: engineLabelFor(info), quality, samples: Math.round(info.samples || 0), modelName: state.modelName, modelId: state.currentModelId,
         filename: `${safeName(state.modelName)}_${state.preset}_${view.saved ? safeName(view.label) : view.id}_${batch}.png`, settings: snapshotSettings() };
       const item = { ...meta, blob, url: URL.createObjectURL(blob), createdAt: new Date().toISOString() };
       if (state.online && state.project) {
@@ -746,10 +829,10 @@ const persistence = bootPersistence();
 try {
   await engine.init();
   engine.setSettings(state.settings);
+  await persistence;            // projects and saved cuts are known before the first render is possible
   state.ready = true;
   $('#stage-loading').hidden = true;
   updateExport();
-  await persistence;
   await refreshThumbnails();
 } catch (e) {
   $('#stage-loading .loader').hidden = true;

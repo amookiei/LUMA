@@ -1,8 +1,9 @@
 # LUMA — Product Render Studio
 
 브라우저에서 제품 3D 모델(GLB · GLTF · OBJ · STL)을 불러와 스튜디오 조명으로 렌더링하고,
-결과를 프로젝트별 갤러리에 보관하는 웹 앱입니다. 모델 파일은 기기 밖으로 나가지 않고,
-렌더 결과만 서버의 SQLite 데이터베이스에 저장됩니다.
+결과를 프로젝트별 갤러리에 보관하는 웹 앱입니다. 저장소는 둘 중 하나입니다.
+`npm start` 의 내장 SQLite 서버(모델은 기기 밖으로 나가지 않음), 또는 Supabase(모델·렌더를 내 계정의
+비공개 저장소에 보관, Vercel 정적 배포에서도 동작).
 
 ```bash
 cd LUMA-studio
@@ -24,7 +25,8 @@ npm test        # API·DB 통합 테스트
 | `LUMA-studio/src/presets.js` | 라이팅 프리셋 레지스트리 (항목 추가 = 새 룩) |
 | `LUMA-studio/src/views.js` | 고정 카메라 컷 레지스트리 |
 | `LUMA-studio/src/effects.js` | 후처리 효과 레지스트리 (비네팅·그레인·워터마크) |
-| `LUMA-studio/src/api.js` | 서버 API 클라이언트 (서버가 없으면 탭 메모리로 폴백) |
+| `LUMA-studio/src/api.js` | SQLite 서버 API 클라이언트 (서버가 없으면 탭 메모리로 폴백) |
+| `LUMA-studio/src/supabase-api.js` | Supabase 어댑터 (빌드 시 `LUMA_SUPABASE_URL`/`ANON_KEY` 가 있으면 사용, 3D 모델 저장·복원 포함) |
 | `LUMA-studio/server/` | Node 22 HTTP 서버, SQLite 스키마·마이그레이션, REST 라우트 |
 | `LUMA-studio/test/` | `node:test` 기반 통합 테스트 |
 | `LUMA-studio/supabase/migrations/` | Supabase 스키마(3D 모델·렌더·룩·구도, RLS, Storage 버킷, RPC) |

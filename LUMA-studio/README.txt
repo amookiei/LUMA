@@ -29,8 +29,13 @@ Vercel 배포
 
 Supabase 연동 (3D 모델 · 렌더 · 룩 · 구도를 계정별 클라우드 저장소에 보관)
 - 스키마: supabase/migrations/20261022000000_luma_studio.sql (Postgres 테이블 + RLS + Storage 버킷 + RPC)
-- 가이드: docs/supabase.md (설정 순서, 모델 업로드/복원 코드, StudioAPI 대응표, 자주 쓰는 쿼리)
+- 어댑터: src/supabase-api.js. 빌드 시 LUMA_SUPABASE_URL / LUMA_SUPABASE_ANON_KEY 가 있으면
+  app.js 가 SQLite 서버 대신 Supabase 를 사용합니다. 로컬은 .env(.env.example 참고), Vercel 은
+  Environment Variables 에 같은 이름으로 넣고 재배포하세요.
+- 이 모드에서는 불러온 3D 모델이 프로젝트에 자동 저장되고(같은 파일은 중복 업로드하지 않음),
+  왼쪽 ‘저장된 모델’ 목록에서 다시 불러오거나 삭제할 수 있습니다. 렌더에는 사용한 모델이 연결됩니다.
 - 브라우저가 Supabase 에 직접 연결하므로 Vercel 정적 배포에서도 DB 모드를 쓸 수 있습니다.
+- 가이드: docs/supabase.md (설정 순서, 동작 방식, 자주 쓰는 쿼리)
 
 데이터베이스
 - 별도 설치 없이 Node 내장 SQLite(node:sqlite)를 사용합니다.
@@ -91,7 +96,8 @@ REST API (server/routes.mjs)
   로 만든 카메라 상태를 넘기면 어떤 궤적이든 프레임 단위로 렌더링할 수 있습니다.
 
 참고 사항
-모델 파일은 네트워크로 전송되지 않고 브라우저 안에서만 처리됩니다.
+렌더링은 항상 이 기기의 GPU에서 처리됩니다. 모델 파일은 SQLite 서버 모드와 정적 모드에서는 기기 밖으로
+나가지 않으며, Supabase 모드에서만 내 계정의 비공개 Storage 에 저장됩니다.
 서버 없이 정적으로 열면 갤러리는 탭의 메모리에 보관됩니다. 탭을 닫기 전에 다운로드하세요.
 첫 정밀 렌더링은 GPU 프로그램 준비에 시간이 걸릴 수 있습니다.
 피사계 심도는 ‘빠르게 · 실시간’ 품질에서는 적용되지 않습니다.

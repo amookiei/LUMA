@@ -4,3 +4,6 @@ data/
 *.sqlite-wal
 *.sqlite-shm
 .DS_Store
+.env
+.env.*
+!.env.example

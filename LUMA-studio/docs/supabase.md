@@ -67,143 +67,39 @@ renders/ <owner_id>/<project_id>/<model_id>/thumbnail.png     (모델 썸네일,
 4. **키 확인** → Project Settings → API: `Project URL`, `anon public` 키. `service_role` 키는 절대 프런트엔드에 넣지 마세요.
 5. **(선택) Storage 용량**: Free 플랜의 객체 최대 크기는 50 MB 입니다. 300 MB 모델을 올리려면 Pro 플랜에서 Global file size limit 을 올리세요. 버킷의 `file_size_limit` 은 300 MB 로 설정돼 있습니다.
 
-## 3. LUMA에 연결
+## 3. LUMA에 연결 (구현되어 있음)
 
-### 3-1. 의존성과 환경 변수
+어댑터는 `src/supabase-api.js` 에 들어 있습니다. 빌드할 때 두 환경 변수가 있으면 `app.js` 가 SQLite 서버 클라이언트(`StudioAPI`) 대신 `SupabaseStudioAPI` 를 사용합니다. 두 클래스는 같은 메서드를 가지므로 나머지 앱 코드는 동일합니다.
 
-```bash
-cd LUMA-studio
-npm i @supabase/supabase-js
+### 3-1. 키 설정
+
+```
+LUMA_SUPABASE_URL=https://<project-ref>.supabase.co
+LUMA_SUPABASE_ANON_KEY=<anon public 키>
 ```
 
-`build.mjs` 의 esbuild 옵션에 빌드 시점 상수를 넣습니다. Vercel 에서는 Project Settings → Environment Variables 에 같은 이름으로 등록하면 됩니다.
+- 로컬: `LUMA-studio/.env` 에 적습니다(`.env.example` 복사). `build.mjs` 가 `process.loadEnvFile` 로 읽어 `dist/app.js` 에 굽습니다.
+- Vercel: Settings → Environment Variables 에 같은 이름으로 추가하고 Redeploy 합니다. 값은 빌드에 포함되므로 바꾸면 재배포가 필요합니다.
+- `service_role` 키는 절대 넣지 마세요. anon 키는 공개 키이고 데이터는 RLS 가 보호합니다.
 
-```js
-// build.mjs
-define: {
-  'globalThis.LUMA_SUPABASE_URL': JSON.stringify(process.env.LUMA_SUPABASE_URL || ''),
-  'globalThis.LUMA_SUPABASE_ANON_KEY': JSON.stringify(process.env.LUMA_SUPABASE_ANON_KEY || ''),
-},
-```
+빌드 로그 마지막 줄에 `Supabase: https://…` 가 보이면 적용된 것이고, `(Supabase not configured)` 면 SQLite/정적 모드로 빌드된 것입니다. 실행 중인 앱에서는 헤더에 `Supabase 연결됨` 이 표시됩니다.
 
-### 3-2. 클라이언트와 로그인
+### 3-2. 동작 방식
 
-```js
-// src/supabase.js
-import { createClient } from '@supabase/supabase-js';
-
-export const supabase = globalThis.LUMA_SUPABASE_URL
-  ? createClient(globalThis.LUMA_SUPABASE_URL, globalThis.LUMA_SUPABASE_ANON_KEY)
-  : null;
-
-export async function ensureSession() {
-  const { data: { session } } = await supabase.auth.getSession();
-  if (session) return session.user;
-  const { data, error } = await supabase.auth.signInAnonymously();   // Anonymous sign-ins 가 켜져 있어야 합니다
-  if (error) throw error;
-  return data.user;
-}
-```
-
-### 3-3. 기존 `StudioAPI` 를 Supabase 로 대체하기
-
-`src/api.js` 의 `StudioAPI` 가 쓰는 메서드 이름을 그대로 구현하면 `app.js` 는 바꿀 필요가 없습니다.
-
-| `StudioAPI` 메서드 | Supabase 호출 |
+| 동작 | 구현 |
 | --- | --- |
-| `probe()` | `ensureSession()` 성공 여부 |
-| `listProjects()` | `from('project_overview').select('*').order('updated_at', {ascending:false})` |
-| `createProject({name})` | `from('projects').insert({name}).select().single()` |
-| `updateProject(id, patch)` | `from('projects').update(patch).eq('id', id).select().single()` |
-| `deleteProject(id)` | `rpc('project_storage_paths', {p_project_id:id})` → 버킷별 `storage.from(b).remove(paths)` → `from('projects').delete().eq('id', id)` |
-| `listRenders(projectId)` | `from('renders').select('*').eq('project_id', projectId).order('created_at', {ascending:false})` |
-| `uploadRender(projectId, blob, meta)` | 아래 3-5 |
-| `renderImageURL(id)` | `storage.from('renders').createSignedUrl(path, 3600)` (비공개 버킷이므로 서명 URL) |
-| `deleteRender(id)` | `storage.from('renders').remove([path])` → `from('renders').delete().eq('id', id)` |
-| `listLooks()` / `createLook()` / `deleteLook()` | `from('looks')` 의 select / insert / delete |
-| `listViews(projectId)` / `createView()` / `deleteView()` | `from('camera_views')` 의 select / insert / delete |
+| 로그인 | 첫 방문에 `signInAnonymously()`. 세션은 브라우저에 저장되어 다음 방문에도 같은 사용자(같은 데이터)입니다. 브라우저 데이터를 지우면 새 익명 사용자가 되므로, 데이터를 오래 보관하려면 Auth → Users 에서 이메일을 연결하거나 Magic Link 로그인을 추가하세요. |
+| 프로젝트 | `project_overview` 로 목록, `projects` 에 insert/update. 삭제 시 `project_storage_paths()` 로 받은 객체를 먼저 지우고 행을 삭제합니다. |
+| 3D 모델 | 모델을 불러오면 자동으로 저장됩니다. 파일별 SHA-256 을 계산해 같은 프로젝트에 같은 주 파일(해시·총 용량 일치)이 있으면 업로드하지 않고 기존 모델을 선택합니다. 파일은 `models/<uid>/<project>/<model>/<하위폴더/파일명>` 으로 올라가고 `register_model()` 로 한 번에 등록됩니다. 등록이 실패하면 올린 파일을 되돌립니다. |
+| 모델 다시 열기 | 왼쪽 ‘저장된 모델’ 목록에서 클릭 → `model_with_files()` → Storage 다운로드 → `File[]` 로 복원해 기존 로더(`renderer.loadFiles`)에 전달합니다. 하위 폴더 사이드카는 파일명에 경로를 포함해 전달하며 로더가 경로 끝 일치로 찾습니다. |
+| 렌더 | `renders/<uid>/<project>/<render>.png` 업로드 후 `renders` 에 insert. 현재 모델의 id 가 `model_id` 로 연결됩니다. 갤러리 이미지는 `createSignedUrls()` 로 한 번에 6시간짜리 서명 URL 을 받습니다. |
+| 룩 · 구도 | `looks`, `camera_views` 의 select / insert / delete. |
 
-컬럼명은 snake_case(`project_id`, `preset_label` …)이고 앱 내부는 camelCase 이므로 어댑터에서 변환하세요.
+### 3-3. 직접 확장할 때
 
-### 3-4. 3D 모델 저장 (업로드 → 등록)
-
-`engine.loadFiles(files)` 가 받는 `File[]` 을 그대로 올립니다. 모델 정보(`meshes`, `triangles`, `dimensions`)는 로드 뒤 `engine.info` 에 있습니다.
-
-```js
-export async function saveModel({ projectId, files, mainFile, info }) {
-  const user = await ensureSession();
-  const modelId = crypto.randomUUID();
-  const prefix = `${user.id}/${projectId}/${modelId}/`;
-  const roleOf = f => f === mainFile ? 'main'
-    : /\.bin$/i.test(f.name) ? 'bin'
-    : /\.mtl$/i.test(f.name) ? 'mtl'
-    : /\.(png|jpe?g|webp|avif|ktx2)$/i.test(f.name) ? 'texture' : 'other';
-  const relativeDir = f => (f.webkitRelativePath || f.name).split('/').slice(0, -1).join('/');
-
-  const uploaded = [];
-  for (const file of files) {
-    const storagePath = prefix + (relativeDir(file) ? relativeDir(file) + '/' : '') + file.name;
-    const { error } = await supabase.storage.from('models').upload(storagePath, file, {
-      contentType: file.type || 'application/octet-stream', upsert: false,
-    });
-    if (error) { await supabase.storage.from('models').remove(uploaded.map(u => u.storage_path)); throw error; }
-    uploaded.push({ role: roleOf(file), name: file.name, relative_path: relativeDir(file), storage_path: storagePath,
-      mime_type: file.type || null, size_bytes: file.size });
-  }
-
-  const { data, error } = await supabase.rpc('register_model', {
-    p_project_id: projectId, p_model_id: modelId,
-    p_name: mainFile.name, p_format: mainFile.name.split('.').pop().toLowerCase(),
-    p_total_bytes: files.reduce((n, f) => n + f.size, 0),
-    p_mesh_count: info.meshes, p_triangle_count: info.triangles, p_dimensions: info.dimensions,
-    p_has_instancing: !!info.hasInstancing, p_files: uploaded,
-  });
-  if (error) { await supabase.storage.from('models').remove(uploaded.map(u => u.storage_path)); throw error; }
-  return data; // model id
-}
-```
-
-`app.js` 의 `loadFiles()` 성공 지점에서 `saveModel({ projectId: state.project.id, files: [...files], mainFile, info: engine.info })` 를 호출하면 됩니다. 300 MB 제한과 파일 종류 검사는 기존 `renderer.loadFiles()` 가 이미 수행합니다.
-
-### 3-5. 저장한 모델 다시 불러오기
-
-Storage 에서 내려받아 `File` 객체로 복원하면 기존 로더가 사이드카(bin/mtl/텍스처)를 그대로 해석합니다. `webkitRelativePath` 는 읽기 전용이라 하위 폴더 구조는 파일명에 경로를 포함해 전달합니다. `renderer.js` 의 `findFile()` 은 경로 끝부분 일치로도 찾기 때문에 동작합니다.
-
-```js
-export async function loadSavedModel(modelId, engine) {
-  const { data, error } = await supabase.rpc('model_with_files', { p_model_id: modelId }).single();
-  if (error) throw error;
-  const files = await Promise.all(data.files.map(async f => {
-    const { data: blob, error } = await supabase.storage.from('models').download(f.storage_path);
-    if (error) throw error;
-    const name = f.relative_path ? `${f.relative_path}/${f.name}` : f.name;
-    return new File([blob], name, { type: f.mime_type || 'application/octet-stream' });
-  }));
-  await engine.loadFiles(files);
-  return data.model;
-}
-```
-
-### 3-6. 렌더 결과 저장
-
-```js
-export async function uploadRender(projectId, blob, meta, modelId = null) {
-  const user = await ensureSession();
-  const id = crypto.randomUUID();
-  const storagePath = `${user.id}/${projectId}/${id}.png`;
-  const { error: upErr } = await supabase.storage.from('renders').upload(storagePath, blob, { contentType: 'image/png' });
-  if (upErr) throw upErr;
-  const { data, error } = await supabase.from('renders').insert({
-    id, project_id: projectId, model_id: modelId,
-    view_id: meta.viewId, label: meta.label, preset: meta.preset, preset_label: meta.presetLabel,
-    width: meta.width, height: meta.height, engine: meta.engine, engine_label: meta.engineLabel,
-    quality: meta.quality, samples: meta.samples, filename: meta.filename,
-    storage_path: storagePath, size_bytes: blob.size, settings: meta.settings,
-  }).select().single();
-  if (error) { await supabase.storage.from('renders').remove([storagePath]); throw error; }
-  return data;
-}
-```
+- 새 컬럼을 추가하면 `supabase-api.js` 의 `*Row()` 매핑 함수(snake_case → camelCase)만 고치면 됩니다.
+- Storage 객체는 SQL cascade 로 지워지지 않으므로, 삭제 동작을 추가할 때는 어댑터의 `removeObjects()` 를 먼저 호출하세요.
+- 테스트: `test/supabase-api.test.mjs` 가 가짜 supabase-js 클라이언트로 경로 규칙, 중복 검사, 롤백, 파일 복원을 검증합니다. `npm test` 로 실행합니다.
 
 ## 4. 자주 쓰는 쿼리
 
@@ -246,5 +142,7 @@ select * from project_storage_paths('<project id>');
 - **기존 SQLite 서버와의 관계**: `server/store.mjs` 는 로컬·자체 호스팅용으로 그대로 둡니다. Supabase 어댑터는 같은 `StudioAPI` 인터페이스를 구현하므로 `app.js` 의 `new StudioAPI()` 자리에서 환경에 따라 골라 쓰면 됩니다.
 
 ## 6. 검증
+
+어댑터는 가짜 Supabase 엔드포인트(GoTrue 익명 가입, PostgREST, Storage)를 띄운 헤드리스 Chromium 에서 OBJ+MTL 업로드 → 중복 감지 → 모델에 연결된 렌더 저장 → 새로고침 후 갤러리(서명 URL)·모델·룩·구도 복원 → 저장 모델 다시 열기 → 모델 삭제까지 확인했습니다. 실제 Supabase 프로젝트에서의 첫 실행은 직접 확인해 주세요.
 
 이 마이그레이션은 PostgreSQL 16 에서 Supabase 의 `auth`/`storage` 스키마 스텁을 두고 두 번 연속 실행(멱등성)하고, 사용자 A 로 프로젝트·모델(파일 2개)·렌더·룩·구도를 만든 뒤 사용자 B 로는 행과 Storage 객체가 전혀 보이지 않고 다른 사용자 폴더에 쓸 수 없음을 확인했습니다. 잘못된 접두사의 `storage_path` 는 `register_model()` 이 거부합니다.

@@ -10,10 +10,11 @@
     "test": "node --test test/*.test.mjs"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.118.0",
+    "fflate": "0.8.2",
     "three": "0.180.0",
     "three-gpu-pathtracer": "0.0.24",
-    "three-mesh-bvh": "0.9.1",
-    "fflate": "0.8.2"
+    "three-mesh-bvh": "0.9.1"
   },
   "devDependencies": {
     "esbuild": "0.25.11"
