@@ -25,8 +25,12 @@ Vercel 배포
   감지해 실행하다 실패하면 사이트 전체가 500(FUNCTION_INVOCATION_FAILED)이 됩니다.
   서버 진입점은 server/cli.mjs 입니다.
 - DB 모드가 필요하면 Node를 상시 실행할 수 있는 호스트(Railway, Fly.io, Render, 자체 VM)에
-  npm start 로 배포하거나, 외부 DB(Turso/libSQL, Neon Postgres)와 Blob 저장소로
-  server/store.mjs 를 옮기는 작업이 필요합니다.
+  npm start 로 배포하거나, Supabase 를 연결하세요(아래).
+
+Supabase 연동 (3D 모델 · 렌더 · 룩 · 구도를 계정별 클라우드 저장소에 보관)
+- 스키마: supabase/migrations/20261022000000_luma_studio.sql (Postgres 테이블 + RLS + Storage 버킷 + RPC)
+- 가이드: docs/supabase.md (설정 순서, 모델 업로드/복원 코드, StudioAPI 대응표, 자주 쓰는 쿼리)
+- 브라우저가 Supabase 에 직접 연결하므로 Vercel 정적 배포에서도 DB 모드를 쓸 수 있습니다.
 
 데이터베이스
 - 별도 설치 없이 Node 내장 SQLite(node:sqlite)를 사용합니다.

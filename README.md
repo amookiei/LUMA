@@ -27,3 +27,5 @@ npm test        # API·DB 통합 테스트
 | `LUMA-studio/src/api.js` | 서버 API 클라이언트 (서버가 없으면 탭 메모리로 폴백) |
 | `LUMA-studio/server/` | Node 22 HTTP 서버, SQLite 스키마·마이그레이션, REST 라우트 |
 | `LUMA-studio/test/` | `node:test` 기반 통합 테스트 |
+| `LUMA-studio/supabase/migrations/` | Supabase 스키마(3D 모델·렌더·룩·구도, RLS, Storage 버킷, RPC) |
+| `LUMA-studio/docs/supabase.md` | Supabase 연동 가이드 |
