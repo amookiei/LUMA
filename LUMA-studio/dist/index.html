@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LUMA — Product Render Studio</title>
+<meta name="description" content="제품의 형태를 빛으로 완성하세요. 3D 모델 업로드, 스튜디오 라이팅, 여러 각도의 고해상도 렌더링을 하나의 공간에서.">
+<meta name="theme-color" content="#151716"><link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23d8edaa'/%3E%3Cpath d='M18 15h9v32H18zm14 20 8-20h10L37 47h-5z' fill='%23151913'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="./style.css">
+</head>
+<body>
+<header class="app-header">
+ <a class="brand" href="./" aria-label="LUMA 홈"><span class="brand-mark"><i></i><i></i><i></i></span>LUMA<span class="brand-caption">PRODUCT STUDIO</span></a>
+ <nav class="main-nav" aria-label="주 메뉴"><button class="active" data-page="studio">스튜디오</button><button data-page="gallery">렌더 갤러리 <span id="gallery-count">0</span></button></nav>
+ <div class="header-end"><span class="local-indicator"><span></span> 로컬 렌더링</span><button id="help-open" class="icon-button" aria-label="사용 가이드" data-icon="help"></button></div>
+</header>
+<section id="studio-page">
+ <div class="project-bar"><div class="project-name"><span class="small-icon" data-icon="folder"></span><span>내 작업 공간</span><span class="slash">/</span><strong id="project-title">Untitled studio</strong><span class="project-tag">01</span></div><div class="project-caption">형태를 담고, 빛으로 완성하다.</div></div>
+ <main class="workspace">
+  <aside class="left-panel">
+   <section class="panel-section model-section"><div class="section-heading"><h2><span>01</span> 3D 모델</h2><span class="small-icon muted" data-icon="box"></span></div>
+    <button id="upload-zone" class="upload-zone"><span class="upload-symbol" data-icon="upload"></span><strong>3D 파일을 여기에 놓으세요</strong><span>또는 클릭하여 파일 선택</span><small>GLB · GLTF · OBJ · STL</small></button>
+    <input id="file-input" type="file" multiple accept=".glb,.gltf,.obj,.stl,.mtl,.bin,.png,.jpg,.jpeg,.webp,.avif,.ktx2" hidden>
+    <div class="model-card"><span class="model-symbol" data-icon="headphones"></span><div><strong id="model-name">Arc headphones</strong><span id="model-meta">샘플 모델 · 준비 중</span></div><span class="sample-badge" id="sample-badge">DEMO</span></div>
+    <div class="model-actions"><button id="demo-button">샘플 불러오기</button><span id="model-stats">—</span></div>
+   </section>
+   <section class="panel-section preset-section"><div class="section-heading"><h2><span>02</span> 라이팅 프리셋</h2><span class="mini-label">3 LOOKS</span></div><p class="section-description">당신의 제품에 어울리는 분위기.</p>
+    <div class="presets">
+     <button class="preset selected preset-dark" data-preset="dark" aria-pressed="true"><img src="./assets/reference-dark.png" alt="어두운 배경에서 제품 윤곽을 비추는 역광 레퍼런스"><span class="preset-shade"></span><span class="preset-number">01 / DARK</span><span class="preset-check" data-icon="check"></span><span class="preset-copy"><strong>차콜 림 라이트</strong><small>선명한 윤곽, 깊은 그림자</small></span><span class="reference-label">REFERENCE</span></button>
+     <button class="preset preset-light" data-preset="light" aria-pressed="false"><img src="./assets/reference-light.png" alt="밝은 스튜디오의 부드러운 조명 레퍼런스"><span class="preset-shade"></span><span class="preset-number">02 / LIGHT</span><span class="preset-check" data-icon="check"></span><span class="preset-copy"><strong>소프트 스튜디오</strong><small>부드럽고 깨끗한 빛</small></span><span class="reference-label">REFERENCE</span></button>
+     <button class="preset preset-amber" data-preset="amber" aria-pressed="false"><img src="./assets/reference-amber.png" alt="주황색 역광 레퍼런스"><span class="preset-shade"></span><span class="preset-number">03 / AMBER</span><span class="preset-check" data-icon="check"></span><span class="preset-copy"><strong>앰버 글로우</strong><small>따뜻한 빛의 존재감</small></span><span class="reference-label">REFERENCE</span></button>
+    </div>
+   </section>
+   <div class="privacy-note"><span data-icon="shield"></span><p>모델 파일은 서버에 업로드되지 않고<br>이 기기에서만 처리됩니다.</p></div>
+  </aside>
+  <section class="center-panel">
+   <div class="canvas-heading"><div><span class="eyebrow">YOUR VIRTUAL PHOTO STUDIO</span><h1>빛으로, 디테일을.</h1></div><button id="reset-view" class="outline-button"><span data-icon="reset"></span> 뷰 초기화</button></div>
+   <div id="stage-shell" class="stage-shell">
+    <div class="stage-top"><span class="live-badge"><i></i> LIVE PREVIEW</span><span id="stage-preset">CHARCOAL RIM</span></div>
+    <div id="viewport"></div>
+    <div class="frame-corner top-left"></div><div class="frame-corner top-right"></div><div class="frame-corner bottom-left"></div><div class="frame-corner bottom-right"></div>
+    <div class="stage-bottom"><div><strong id="view-name">Hero angle</strong><span id="stage-model">ARC / 01</span></div><span class="stage-note"><span data-icon="mouse"></span> 드래그로 회전 · 스크롤로 확대</span></div>
+    <div id="stage-loading" class="stage-loading"><div class="loader"></div><strong>스튜디오에 빛을 켜고 있어요</strong><span>3D 미리보기를 준비합니다.</span></div>
+    <div id="drop-overlay" class="drop-overlay" hidden><span data-icon="upload"></span><strong>여기에 모델을 놓으세요</strong><span>텍스처 파일도 함께 놓을 수 있습니다.</span></div>
+   </div>
+   <div class="canvas-toolbar"><div class="segmented aspect-controls" aria-label="이미지 비율"><button class="active" data-aspect="1:1" aria-pressed="true">1:1</button><button data-aspect="4:5" aria-pressed="false">4:5</button><button data-aspect="16:9" aria-pressed="false">16:9</button></div><div class="canvas-tools"><span>모델 회전</span><button data-rotate="x" title="X축으로 90도 회전">X <span>↻</span></button><button data-rotate="y" title="Y축으로 90도 회전">Y <span>↻</span></button><button data-rotate="z" title="Z축으로 90도 회전">Z <span>↻</span></button><i></i><button id="fullscreen" class="icon-button" aria-label="미리보기 전체 화면" data-icon="expand"></button></div></div>
+   <section class="shots-section"><div class="shots-heading"><div><h2>하나의 제품, 다양한 시선.</h2><span>렌더링할 컷을 선택하세요. 이미지를 클릭하면 미리봅니다.</span></div><button id="select-all">전체 선택</button></div><div id="shot-grid" class="shot-grid"></div></section>
+   <div class="studio-status"><span id="engine-status"><i></i> 스튜디오 준비 중</span><span>DESIGNED FOR THE DETAILS</span></div>
+  </section>
+  <aside class="right-panel">
+   <div class="section-heading controls-heading"><h2><span>03</span> 디테일 조절</h2><button id="reset-settings" class="icon-button" aria-label="조명과 재질 설정 초기화" data-icon="sliders"></button></div>
+   <div class="control-tabs" role="tablist"><button class="active" data-control-tab="lighting" role="tab" aria-selected="true">라이팅</button><button data-control-tab="material" role="tab" aria-selected="false">재질</button></div>
+   <div id="lighting-controls" class="control-content">
+    <div class="control-group"><div class="control-label"><label for="exposure">노출</label><output for="exposure" id="exposure-value">1.00</output></div><input id="exposure" type="range" min="0.3" max="2.5" step="0.05" value="1"><div class="range-limits"><span>어둡게</span><span>밝게</span></div></div>
+    <div class="control-group"><div class="control-label"><label for="lightStrength">조명 강도</label><output for="lightStrength" id="lightStrength-value">100%</output></div><input id="lightStrength" type="range" min="0.3" max="3" step="0.05" value="1"></div>
+    <div class="control-group"><div class="control-label"><label for="lightAngle">조명 방향</label><output for="lightAngle" id="lightAngle-value">0°</output></div><input id="lightAngle" type="range" min="-180" max="180" step="5" value="0"><div class="range-limits"><span>−180°</span><span>+180°</span></div></div>
+    <div class="control-group"><div class="control-label"><label for="focalLength">렌즈 초점 거리</label><output for="focalLength" id="focalLength-value">70 mm</output></div><input id="focalLength" type="range" min="24" max="120" step="1" value="70"><div class="range-limits"><span>와이드</span><span>디테일</span></div></div>
+   </div>
+   <div id="material-controls" class="control-content" hidden>
+    <label class="field-label" for="materialMode">제품 재질</label><select id="materialMode"><option value="original">모델의 원래 재질 유지</option><option value="custom">전체 재질 직접 설정</option></select><p class="control-hint">GLB / GLTF에 포함된 색상과 텍스처를 그대로 사용합니다.</p>
+    <div id="custom-material"><div class="color-row"><label for="color">제품 색상</label><input id="color" type="color" value="#55565a"></div><div class="control-group"><div class="control-label"><label for="roughness">거칠기</label><output id="roughness-value">0.50</output></div><input id="roughness" type="range" min="0.05" max="1" step="0.01" value="0.5"></div><div class="control-group"><div class="control-label"><label for="metalness">금속성</label><output id="metalness-value">0.00</output></div><input id="metalness" type="range" min="0" max="1" step="0.01" value="0"></div></div>
+   </div>
+   <div class="background-controls"><div class="color-row"><label for="background">배경 색상</label><div class="color-input"><input id="background" type="color" value="#171918"><span id="background-hex">#171918</span></div></div><label class="toggle-row" for="transparent"><span>투명 배경 <small>PNG</small></span><input id="transparent" type="checkbox"><span class="switch"></span></label></div>
+   <div class="export-settings"><div class="section-heading"><h2><span>04</span> 렌더 설정</h2><span class="small-icon muted" data-icon="image"></span></div><div class="select-row"><label for="resolution">해상도 <small>긴 변 기준</small></label><select id="resolution"><option value="1080">1080 px</option><option value="2048" selected>2048 px · 2K</option><option value="4096">4096 px · 4K</option></select></div><div class="select-row"><label for="quality">렌더 품질</label><select id="quality"><option value="preview">빠르게 · 실시간</option><option value="standard" selected>정밀 · 64 샘플</option><option value="high">최고 · 256 샘플</option></select></div><p class="render-hint" id="quality-hint"><span data-icon="sparkles"></span> 빛의 반사와 부드러운 그림자를 정밀하게 계산합니다.</p><div class="export-summary"><span>PNG · <span id="export-dimensions">2048 × 2048</span></span><strong id="selected-count">6 CUTS</strong></div><button id="render-button" class="render-button" disabled><span data-icon="aperture"></span><span id="render-label">6개 이미지 렌더링</span><span data-icon="arrow-right"></span></button><span class="export-footnote">완성된 이미지는 갤러리에서 저장하세요.</span></div>
+  </aside>
+ </main>
+</section>
+<section id="gallery-page" class="gallery-page" hidden><div class="gallery-heading"><div><span class="eyebrow">YOUR RENDER COLLECTION</span><h1>빛을 담은 순간들.</h1><p>생성한 이미지를 확인하고 원본 해상도로 다운로드하세요.</p></div><div><button id="clear-gallery" class="outline-button">갤러리 비우기</button><button id="download-all" class="accent-button"><span data-icon="download"></span> 전체 ZIP 다운로드</button></div></div><div id="gallery-empty" class="gallery-empty"><span data-icon="image"></span><h2>첫 번째 컷을 기다리고 있어요.</h2><p>스튜디오에서 모델과 조명을 선택하고 렌더링해 보세요.</p><button class="accent-button" data-page="studio">스튜디오로 돌아가기 <span data-icon="arrow-right"></span></button></div><div id="gallery-grid" class="gallery-grid"></div><p class="gallery-memory-note">이 갤러리는 현재 브라우저 탭에 보관됩니다. 탭을 닫기 전에 이미지를 다운로드하세요.</p></section>
+<div class="modal-backdrop" id="render-modal" hidden><section class="render-dialog" role="dialog" aria-modal="true" aria-labelledby="render-title"><div class="render-orbit" data-icon="aperture"></div><span class="eyebrow">MAKING LIGHT WORK</span><h2 id="render-title">빛을 차곡차곡 쌓고 있어요.</h2><p id="render-detail">렌더링을 준비합니다.</p><div class="progress-track"><i id="render-progress"></i></div><div class="progress-meta"><span id="render-step">1 / 6</span><span id="render-percent">0%</span></div><p class="render-modal-note">이 탭을 열어 두세요. 모델과 기기의 성능에 따라 시간이 걸릴 수 있습니다.</p><button id="cancel-render" class="outline-button">렌더링 중단</button></section></div>
+<dialog id="help-dialog"><button id="help-close" class="dialog-close icon-button" aria-label="가이드 닫기" data-icon="close"></button><span class="eyebrow">A LITTLE LIGHT GOES A LONG WAY</span><h2>나만의 제품 스튜디오.</h2><ol class="help-steps"><li><strong>모델을 불러오세요.</strong><p>GLB, GLTF, OBJ, STL을 지원합니다. GLTF는 .bin과 텍스처를, OBJ는 MTL과 텍스처를 함께 선택하세요. 재질이 포함된 GLB를 권장합니다.</p></li><li><strong>빛과 구도를 골라보세요.</strong><p>차콜 역광, 밝은 소프트 스튜디오, 앰버 조명을 선택하세요. 드래그로 회전, 스크롤로 확대, 오른쪽 드래그로 이동합니다. 모델이 누워 있다면 X·Y·Z 회전을 사용하세요.</p></li><li><strong>여러 컷을 한 번에 만드세요.</strong><p>체크한 고정 앵글로 여러 이미지를 생성합니다. Hero 컷에는 직접 조절한 현재 카메라 구도가 사용됩니다. 정밀·최고 품질은 GPU 패스 트레이싱으로 반사와 그림자를 누적 계산합니다.</p></li><li><strong>결과를 다운로드하세요.</strong><p>갤러리에서 개별 PNG 또는 전체 ZIP을 저장하세요. 최대 긴 변 4K와 투명 배경을 지원합니다. 렌더링 중단 시 완료된 컷은 갤러리에 남습니다.</p></li></ol><div class="help-note">참고 이미지와 같은 완성도는 모델의 디테일·UV·텍스처·재질에 따라 달라집니다. STEP·IGES·3DM·BLEND는 GLB 또는 OBJ로 변환 후 불러오세요. WebGL2를 지원하는 데스크톱 브라우저를 권장합니다.</div><a href="https://github.com/gkjohnson/three-gpu-pathtracer" target="_blank" rel="noopener noreferrer" class="engine-credit">Built with Three.js & GPU Path Tracer ↗</a></dialog>
+<dialog id="image-dialog"><button id="image-close" class="dialog-close icon-button" aria-label="이미지 닫기" data-icon="close"></button><img id="expanded-image" alt="렌더링 이미지 크게 보기"><div id="expanded-caption"></div></dialog>
+<div id="toast" class="toast" role="status" hidden></div>
+<script type="module" src="./app.js"></script>
+</body></html>
